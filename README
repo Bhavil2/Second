@@ -1,10 +1,1 @@
-   Steps in code:
-        Step 1: Import libraries
-        Step 2: Generate synthetic data
-        Step 3: Preprocessing and feature engineering for claim-level (mapping and one-hot)
-        Step 4: Aggregate to patient level for clustering
-        Step 5: Cluster patients
-        Step 6: Assign cluster to claims
-        Step 7: For each cluster, run OneClassSVM on claim-level features (the one-hot encoded data of the claim)
-        Step 8: Identify outlier claims and then practitioners
-        Step 9: Output the top practitioners with the most outlier claims
+Using SVM for outlier detection
