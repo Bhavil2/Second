@@ -18,7 +18,7 @@ start_time = time.time()
 
 # Access command line arguments
 arg1 = sys.argv[1]
-path = '\DE1_0_2008_to_2010_Outpatient_Claims_Sample_2.csv' + arg1
+path = arg1
 
 ### Reading the data
 data_1 = pd.read_csv(path)
