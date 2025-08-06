@@ -5,243 +5,282 @@ import warnings
 import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MultiLabelBinarizer
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Configure warnings
+# =============================================================================
+# Configuration & Setup
+# =============================================================================
+# Configure warnings to keep the output clean
 warnings.simplefilter(action='ignore', category=pd.errors.DtypeWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
-# Record the start time
+# Record the start time to measure execution duration
 start_time = time.time()
+
+# =============================================================================
+# Data Loading & Initial Validation
+# =============================================================================
+print("--- Starting Data Loading and Validation ---")
 
 # Handle command line arguments safely
 if len(sys.argv) < 2:
-    print("Error: Please provide the input CSV file path as an argument")
+    print("Error: Please provide the input CSV file path as an argument.")
+    print("Usage: python your_script_name.py <path_to_csv>")
     sys.exit(1)
 
 path = sys.argv[1]
 
-### Reading the data with error handling and dtype specification
+# Check if the file exists before attempting to read
+if not os.path.exists(path):
+    print(f"Error: The file '{path}' was not found.")
+    sys.exit(1)
+
+# Define dtypes for code columns to prevent mixed-type issues
+dtype_dict = {f"ICD9_DGNS_CD_{i+1}": str for i in range(25)} # Increased range for safety
+dtype_dict.update({f"HCPCS_CD_{i+1}": str for i in range(45)})
+
 try:
+    print(f"Reading data from: {path}")
     # Use `low_memory=False` to handle large files with mixed dtypes better
-    # or specify dtypes explicitly if you know them.
-    # For now, low_memory=False is a good general solution.
-    data_1 = pd.read_csv(path, low_memory=False)
+    data_1 = pd.read_csv(path, low_memory=False, dtype=dtype_dict)
+    print("CSV file read successfully.")
 except Exception as e:
     print(f"Error reading CSV file: {e}")
     sys.exit(1)
 
-### Padding zeros to make all values of same length
-# A more robust way to handle mixed dtypes and NaNs
-for i in range(10):
-    col_name = f"ICD9_DGNS_CD_{i+1}"
-    if col_name in data_1.columns:
-        # Convert the entire column to a string type first
-        data_1[col_name] = data_1[col_name].astype(str)
-        # Now, apply string operations, safely handling 'nan' strings
-        data_1[col_name] = data_1[col_name].str.strip().str.replace('nan', '', regex=False).str.pad(5, fillchar='0')
-       
-for i in range(44):
-    col_name = f"HCPCS_CD_{i+1}"
-    if col_name in data_1.columns:
-        # Convert the entire column to a string type first
-        data_1[col_name] = data_1[col_name].astype(str)
-        # Now, apply string operations, safely handling 'nan' strings
-        data_1[col_name] = data_1[col_name].str.strip().str.replace('nan', '', regex=False).str.pad(5, fillchar='0')
+# =============================================================================
+# Data Preprocessing & Cleaning
+# =============================================================================
+print("\n--- Starting Data Preprocessing ---")
 
-### Converting Diagnosis Codes to Categories (rest of the code remains the same)
+# --- Padding zeros to make all code values a uniform length ---
+# This is crucial for accurate mapping and categorization.
+# A more robust way to handle mixed dtypes and NaNs.
+diag_code_cols = [f"ICD9_DGNS_CD_{i+1}" for i in range(25)]
+hcpcs_code_cols = [f"HCPCS_CD_{i+1}" for i in range(45)]
+
+for col_name in diag_code_cols:
+    if col_name in data_1.columns:
+        # Use fillna('') to replace NaN with an empty string before string operations.
+        data_1[col_name] = data_1[col_name].fillna('').astype(str).str.strip().str.pad(5, side='left', fillchar='0')
+
+for col_name in hcpcs_code_cols:
+    if col_name in data_1.columns:
+        data_1[col_name] = data_1[col_name].fillna('').astype(str).str.strip().str.pad(5, side='left', fillchar='0')
+
+print("Padded diagnosis and procedure codes.")
+
+# --- Converting Diagnosis Codes to High-Level Categories ---
 diag_categories = {
-    '00': 'Infection_&_Parasitic', '01': 'Infection_&_Parasitic', '02': 'Infection_&_Parasitic', '03': 'Infection_&_Parasitic',
-    '04': 'Infection_&_Parasitic', '05': 'Infection_&_Parasitic', '06': 'Infection_&_Parasitic', '07': 'Infection_&_Parasitic',
-    '08': 'Infection_&_Parasitic', '09': 'Infection_&_Parasitic', '10': 'Infection_&_Parasitic', '11': 'Infection_&_Parasitic',
-    '12': 'Infection_&_Parasitic', '13': 'Infection_&_Parasitic',
-    '14': 'Neoplasm', '15': 'Neoplasm', '16': 'Neoplasm', '17': 'Neoplasm', '18': 'Neoplasm', '19': 'Neoplasm',
-    '20': 'Neoplasm', '21': 'Neoplasm', '22': 'Neoplasm', '23': 'Neoplasm',
-    '24': 'Endocrine_Nutritional_Immunity', '25': 'Endocrine_Nutritional_Immunity', '26': 'Endocrine_Nutritional_Immunity',
-    '27': 'Endocrine_Nutritional_Immunity',
-    '28': 'Blood',
-    '29': 'Mental_&_Behavioral', '30': 'Mental_&_Behavioral', '31': 'Mental_&_Behavioral',
-    '32': 'Nervous', '33': 'Nervous', '34': 'Nervous', '35': 'Nervous', '36': 'Nervous', '37': 'Nervous', '38': 'Nervous',
-    '39': 'Circulatory', '40': 'Circulatory', '41': 'Circulatory', '42': 'Circulatory', '43': 'Circulatory', '44': 'Circulatory',
-    '45': 'Circulatory',
-    '46': 'Respiratory', '47': 'Respiratory', '48': 'Respiratory', '49': 'Respiratory', '50': 'Respiratory', '51': 'Respiratory',
-    '52': 'Digestive', '53': 'Digestive', '54': 'Digestive', '55': 'Digestive', '56': 'Digestive', '57': 'Digestive',
-    '58': 'Genitourinary', '59': 'Genitourinary', '60': 'Genitourinary', '61': 'Genitourinary', '62': 'Genitourinary',
-    '68': 'Skin', '69': 'Skin', '70': 'Skin',
-    '71': 'Musculoskeletal', '72': 'Musculoskeletal', '73': 'Musculoskeletal',
-    '74': 'Congenital_Anomaly', '75': 'Congenital_Anomaly',
-    '80': 'Injury_&_Poisining', '81': 'Injury_&_Poisining', '82': 'Injury_&_Poisining', '83': 'Injury_&_Poisining',
-    '84': 'Injury_&_Poisining', '85': 'Injury_&_Poisining', '86': 'Injury_&_Poisining', '87': 'Injury_&_Poisining',
-    '88': 'Injury_&_Poisining', '89': 'Injury_&_Poisining', '90': 'Injury_&_Poisining', '91': 'Injury_&_Poisining',
-    '92': 'Injury_&_Poisining', '93': 'Injury_&_Poisining', '94': 'Injury_&_Poisining', '95': 'Injury_&_Poisining',
-    '96': 'Injury_&_Poisining', '97': 'Injury_&_Poisining', '98': 'Injury_&_Poisining', '99': 'Injury_&_Poisining'
+    'Infection_&_Parasitic': range(0, 140), 'Neoplasm': range(140, 240),
+    'Endocrine_Nutritional_Immunity': range(240, 280), 'Blood': range(280, 290),
+    'Mental_&_Behavioral': range(290, 320), 'Nervous': range(320, 390),
+    'Circulatory': range(390, 460), 'Respiratory': range(460, 520),
+    'Digestive': range(520, 580), 'Genitourinary': range(580, 630),
+    'Complications_Pregnancy_Childbirth': range(630, 680), 'Skin': range(680, 710),
+    'Musculoskeletal': range(710, 740), 'Congenital_Anomaly': range(740, 760),
+    'Perinatal_Conditions': range(760, 780), 'Symptoms_&_Ill-defined': range(780, 800),
+    'Injury_&_Poisining': range(800, 1000),
+    'Supplementary_V_Codes': 'V', 'Supplementary_E_Codes': 'E'
 }
-for i in range(10):
+
+def map_diag_code(code):
+    """Maps an ICD-9 code to its category."""
+    if not code or not isinstance(code, str) or code.strip() in ['00000', '']:
+        return None
+    if code.startswith('V'):
+        return 'Supplementary_V_Codes'
+    if code.startswith('E'):
+        return 'Supplementary_E_Codes'
+    try:
+        # Convert the numeric part of the code to an integer for range checking
+        code_num = int(code[:3])
+        for category, code_range in diag_categories.items():
+            if isinstance(code_range, range) and code_num in code_range:
+                return category
+    except (ValueError, TypeError):
+        return None
+    return 'Other'
+
+for i in range(25):
     col_name = f"ICD9_DGNS_CD_{i+1}"
-    diag_col = f"Diag{i+1}"
+    diag_col = f"Diag_Cat_{i+1}"
     if col_name in data_1.columns:
-        data_1[diag_col] = data_1[col_name].str[:2].map(diag_categories)
+        data_1[diag_col] = data_1[col_name].apply(map_diag_code)
 
-### Converting Procedure Codes to Categories (rest of the code remains the same)
-proc_conditions = [
-    (lambda x: x.str.startswith('0'), 'Anesthesia'),
-    (lambda x: x.str.startswith(('1', '2', '3', '4', '5', '6')), 'Surgery'),
-    (lambda x: x.str.startswith('7'), 'Radiology'),
-    (lambda x: x.str.startswith('8'), 'Pathology_Procedure'),
-    (lambda x: x.str.startswith(('992', '993', '994')), 'E&M'),
-    (lambda x: x.str.startswith('A0'), 'Ambulance'),
-    (lambda x: x.str.startswith(('A42', 'A43', 'A44', 'A45', 'A46', 'A47', 'A48', 'A49', 'A50', 'A51', 'A52', 'A53',
-                                 'A54', 'A55', 'A56', 'A57', 'A58', 'A59', 'A60', 'A61', 'A62', 'A63', 'A64', 'A65',
-                                 'A66', 'A67', 'A68', 'A69', 'A70', 'A71', 'A72', 'A73', 'A74', 'A75', 'A76', 'A77',
-                                 'A78', 'A79', 'A80')), 'Medical_Supplies'),
-    (lambda x: x.str.startswith('A9'), 'Investigational'),
-    (lambda x: x.str.startswith(('J0', 'J1', 'J2', 'J3', 'J4', 'J5', 'J6', 'J7', 'J8')), 'Drugs_other_than_oral'),
-    (lambda x: x.str.startswith('J9'), 'Chemotherapy')
-]
-for i in range(44):
+print("Mapped diagnosis codes to categories.")
+
+# --- Converting Procedure Codes to High-Level Categories ---
+def map_hcpcs_code(code):
+    """Maps an HCPCS code to its category."""
+    if not code or not isinstance(code, str) or code.strip() in ['00000', '']:
+        return None
+    # Check based on starting characters
+    if code.startswith('0'): return 'Anesthesia'
+    if any(code.startswith(s) for s in ['1', '2', '3', '4', '5', '6']): return 'Surgery'
+    if code.startswith('7'): return 'Radiology'
+    if code.startswith('8'): return 'Pathology_Procedure'
+    if any(code.startswith(s) for s in ['992', '993', '994']): return 'E&M'
+    if code.startswith('A0'): return 'Ambulance'
+    if 'A42' <= code[:3] <= 'A80': return 'Medical_Supplies'
+    if code.startswith('A9'): return 'Investigational'
+    if 'J0' <= code[:2] <= 'J8': return 'Drugs_other_than_oral'
+    if code.startswith('J9'): return 'Chemotherapy'
+    if code.startswith('G'): return 'Temp_Codes_Procedures_Services'
+    if code.startswith('Q'): return 'Temp_Codes'
+    return 'Other_Services'
+
+for i in range(45):
     col_name = f"HCPCS_CD_{i+1}"
-    proc_col = f"Proc{i+1}"
+    proc_col = f"Proc_Cat_{i+1}"
     if col_name in data_1.columns:
-        data_1[proc_col] = np.nan
-        for condition, category in proc_conditions:
-            mask = data_1[col_name].str.replace('nan', '', regex=False).fillna('')
-            data_1.loc[condition(mask), proc_col] = category
+        data_1[proc_col] = data_1[col_name].apply(map_hcpcs_code)
 
-### Grouping data at patient level - Optimized aggregation
-diag_cols = [f'Diag{i+1}' for i in range(10) if f'Diag{i+1}' in data_1.columns]
-proc_cols = [f'Proc{i+1}' for i in range(44) if f'Proc{i+1}' in data_1.columns]
-required_cols = ['DESYNPUF_ID'] + diag_cols + proc_cols
+print("Mapped procedure codes to categories.")
 
-if not all(col in data_1.columns for col in required_cols):
-    missing = [col for col in required_cols if col not in data_1.columns]
-    print(f"Error: Missing required columns for aggregation: {missing}")
-    sys.exit(1)
+# =============================================================================
+# Data Aggregation at Patient Level
+# =============================================================================
+print("\n--- Aggregating Data at Patient Level ---")
 
-agg_dict = {col: lambda x: set(x.dropna()) for col in diag_cols + proc_cols}
-try:
-    data_2 = data_1.groupby(['DESYNPUF_ID']).agg(agg_dict)
-except Exception as e:
-    print(f"Error in groupby operation: {e}")
-    sys.exit(1)
+diag_cat_cols = [f'Diag_Cat_{i+1}' for i in range(25) if f'Diag_Cat_{i+1}' in data_1.columns]
+proc_cat_cols = [f'Proc_Cat_{i+1}' for i in range(45) if f'Proc_Cat_{i+1}' in data_1.columns]
 
-### Creating final diagnosis and procedure columns by combining individual columns
-data_2['Diagnosis'] = data_2[diag_cols].apply(lambda row: set().union(*row), axis=1)
-data_2['Procedure'] = data_2[proc_cols].apply(lambda row: set().union(*row), axis=1)
+# Melt the dataframe to have one category per row for each patient
+diag_melt = data_1[['DESYNPUF_ID'] + diag_cat_cols].melt(
+    id_vars='DESYNPUF_ID', value_name='Diag_Category'
+).dropna()
+proc_melt = data_1[['DESYNPUF_ID'] + proc_cat_cols].melt(
+    id_vars='DESYNPUF_ID', value_name='Proc_Category'
+).dropna()
 
-### Creating one hot encoded data for diagnosis codes
-unique_diag = sorted(list(set().union(*data_2['Diagnosis'])))
-data_3 = pd.DataFrame(index=data_2.index, columns=unique_diag)
-data_3.loc[:,:] = 0
+# Group by patient and aggregate categories into a unique set
+patient_diag = diag_melt.groupby('DESYNPUF_ID')['Diag_Category'].unique().apply(list).reset_index()
+patient_proc = proc_melt.groupby('DESYNPUF_ID')['Proc_Category'].unique().apply(list).reset_index()
 
-for idx, diag_set in data_2['Diagnosis'].items():
-    data_3.loc[idx, list(diag_set)] = 1
+# Merge the diagnosis and procedure data
+patient_data = pd.merge(patient_diag, patient_proc, on='DESYNPUF_ID', how='outer')
+patient_data = patient_data.fillna('').applymap(lambda x: [] if x == '' else x)
 
-### Filtering for patients having more than one diagnosis
-data_3['Total'] = data_3.sum(axis=1)
-data_4 = data_3[data_3['Total'] > 1].drop('Total', axis=1)
+print(f"Aggregated data for {patient_data.shape[0]} unique patients.")
 
-# Perform K-means clustering with error handling
-try:
-    kmeans = KMeans(n_clusters=84, random_state=42, n_init=10)
-    data_4['Cluster'] = kmeans.fit_predict(data_4)
-except Exception as e:
-    print(f"Error in KMeans clustering: {e}")
-    sys.exit(1)
+# =============================================================================
+# Feature Engineering
+# =============================================================================
+print("\n--- Performing Feature Engineering ---")
 
-### Outlier detection using XGBoost
-def data_tr(num_rows=84, num_procs=44):
-    """Create synthetic data for outlier detection"""
-    np.random.seed(42)
-    # Each row represents a cluster, each column represents a procedure
-    df = pd.DataFrame(np.random.rand(num_rows, num_procs),
-                      columns=[f'Proc{i+1}' for i in range(num_procs)])
-    # Make some values much higher to simulate outliers
-    for i in range(10): # Create 10 outliers
-        row = np.random.randint(0, num_rows)
-        col = np.random.randint(0, num_procs)
-        df.iloc[row, col] = np.random.rand() * 10
-    return df
+# --- One-Hot Encode the list of categories for both diagnosis and procedures ---
+mlb_diag = MultiLabelBinarizer()
+diag_features = pd.DataFrame(
+    mlb_diag.fit_transform(patient_data['Diag_Category']),
+    columns=[f"Diag_{c}" for c in mlb_diag.classes_],
+    index=patient_data.index
+)
 
-ph_2_data1 = data_tr()
+mlb_proc = MultiLabelBinarizer()
+proc_features = pd.DataFrame(
+    mlb_proc.fit_transform(patient_data['Proc_Category']),
+    columns=[f"Proc_{c}" for c in mlb_proc.classes_],
+    index=patient_data.index
+)
 
-# Prepare data for XGBoost
-ph_2_data2 = pd.DataFrame(0, index=ph_2_data1.index, columns=ph_2_data1.columns)
-for col in ph_2_data1.columns:
-    threshold = ph_2_data1[col].quantile(0.95)
-    ph_2_data2[col] = (ph_2_data1[col] > threshold).astype(int)
+# Combine all features into a single dataframe
+features = pd.concat([diag_features, proc_features], axis=1)
+features['DESYNPUF_ID'] = patient_data['DESYNPUF_ID']
 
-X = ph_2_data1.values
-y = ph_2_data2.values
+# Scale features for clustering
+scaler = StandardScaler()
+features_scaled = scaler.fit_transform(features.drop('DESYNPUF_ID', axis=1))
+print("Created and scaled features for machine learning.")
 
-outlier_predictions = pd.DataFrame(0, index=ph_2_data1.index, columns=ph_2_data1.columns)
-for i, col in enumerate(ph_2_data1.columns):
-    if len(np.unique(y[:, i])) > 1:
-        X_train, X_test, y_train, y_test = train_test_split(X, y[:, i], test_size=0.2, random_state=42, stratify=y[:, i])
+# =============================================================================
+# Patient Clustering (K-Means)
+# =============================================================================
+print("\n--- Performing Patient Clustering with K-Means ---")
 
-        model = XGBClassifier(n_estimators=100, max_depth=3, learning_rate=0.1, random_state=42,
-                              use_label_encoder=False, eval_metric='logloss')
-        model.fit(X_train, y_train)
-        outlier_predictions[col] = model.predict(X)
-    else:
-        outlier_predictions[col] = 0
+# Determine the optimal number of clusters using the Elbow Method
+# inertia = []
+# K = range(2, 11)
+# for k in K:
+#     kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+#     kmeans.fit(features_scaled)
+#     inertia.append(kmeans.inertia_)
 
-outlier_mask = outlier_predictions == 1
+# For speed, we'll skip the elbow plot in this script and choose a fixed k
+# plt.figure(figsize=(8, 4))
+# plt.plot(K, inertia, 'bo-')
+# plt.xlabel('Number of Clusters (k)')
+# plt.ylabel('Inertia')
+# plt.title('Elbow Method For Optimal k')
+# plt.show()
 
-### Collecting outlier Cluster-Procedure combinations
-ph_3_data1 = pd.DataFrame(columns=['Cluster', 'Procedure'])
-for i in range(ph_2_data1.shape[0]):
-    for j, col in enumerate(ph_2_data1.columns):
-        if outlier_mask.iloc[i, j]:
-            ph_3_data1.loc[len(ph_3_data1)] = [i, col]
+# Let's assume k=5 is a good number of clusters
+k = 5
+kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+clusters = kmeans.fit_predict(features_scaled)
 
-### Fetching claims data containing outlier combinations
-if 'Cluster' not in data_4.columns or 'DESYNPUF_ID' not in data_1.columns:
-    print("Error: Required columns not found for merging")
-    sys.exit(1)
+# Add cluster labels to our feature set
+features['Cluster'] = clusters
+print(f"Assigned patients to {k} clusters.")
 
-data_4_indexed = data_4.reset_index().rename(columns={'index': 'DESYNPUF_ID'})
+# =============================================================================
+# Target Variable Creation & Classification (XGBoost)
+# =============================================================================
+print("\n--- Training Classifier to Predict High-Risk Patients ---")
 
-ph_3_data2 = pd.merge(data_1, data_4_indexed[['DESYNPUF_ID', 'Cluster']], on='DESYNPUF_ID', how='inner')
+# --- Create a Target Variable ---
+# Let's define a "High-Risk" patient as someone with a Neoplasm diagnosis
+# and who has undergone Chemotherapy. This is a proxy for a complex case.
+features['High_Risk'] = (features['Diag_Neoplasm'] & features['Proc_Chemotherapy']).astype(int)
 
-proc_long = pd.melt(ph_3_data2, id_vars=['DESYNPUF_ID', 'CLM_ID', 'PRVDR_NUM', 'Cluster'],
-                    value_vars=[col for col in proc_cols if col in ph_3_data2.columns], value_name='Procedure')
-proc_long = proc_long.dropna(subset=['Procedure'])
+# Check if we have enough samples for both classes
+target_counts = features['High_Risk'].value_counts()
+print("High-Risk Patient Distribution:\n", target_counts)
 
-ph_3_data3 = pd.merge(proc_long, ph_3_data1, on=['Cluster', 'Procedure'], how='inner')
-
-### Generating practitioner level risk and allegation
-if not ph_3_data3.empty and 'PRVDR_NUM' in ph_3_data3.columns:
-    ph_3_data3['Allegation'] = ph_3_data3['Cluster'].astype(str) + '-' + ph_3_data3['Procedure'].astype(str)
-
-    ph_3_data4 = ph_3_data3.groupby('PRVDR_NUM').agg(
-        Unnecessary_Count=('CLM_ID', 'nunique'),
-        Allegation=('Allegation', lambda x: set(x))
-    )
-
-    ph_3_data5 = data_1.groupby('PRVDR_NUM')['CLM_ID'].nunique().rename('Total_count')
-
-    ph_3_data6 = pd.merge(ph_3_data4, ph_3_data5, on='PRVDR_NUM', how='right').fillna(0)
-    ph_3_data6['perc_unnecessary_claims'] = ph_3_data6['Unnecessary_Count'] / ph_3_data6['Total_count']
-
-    ph_3_data7 = ph_3_data6[ph_3_data6['Total_count'] > 10]
-
-    Q1 = ph_3_data7['perc_unnecessary_claims'].quantile(0.25)
-    Q3 = ph_3_data7['perc_unnecessary_claims'].quantile(0.75)
-    IQR = Q3 - Q1
-    
-    ph_3_data8 = ph_3_data7[ph_3_data7['perc_unnecessary_claims'] > (Q3 + 3*IQR)]
-    
-    output = ph_3_data8.sort_values('perc_unnecessary_claims', ascending=False)
-    output.to_csv('Output.csv')
+if len(target_counts) < 2 or target_counts.min() < 10:
+    print("\nWarning: Not enough samples for one of the classes. Classification may not be meaningful.")
+    print("Skipping classification part.")
 else:
-    print("Warning: No outlier claims detected or PRVDR_NUM column missing")
-    pd.DataFrame().to_csv('Output.csv')
+    # --- Prepare Data for XGBoost ---
+    X = features.drop(['DESYNPUF_ID', 'High_Risk', 'Cluster'], axis=1)
+    y = features['High_Risk']
 
-# Record and print execution time
+    # Split data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+
+    # --- Train XGBoost Classifier ---
+    # Handle class imbalance with scale_pos_weight
+    scale_pos_weight = y_train.value_counts()[0] / y_train.value_counts()[1]
+    xgb = XGBClassifier(objective='binary:logistic', use_label_encoder=False,
+                        eval_metric='logloss', scale_pos_weight=scale_pos_weight, random_state=42)
+
+    print("Training XGBoost model...")
+    xgb.fit(X_train, y_train)
+
+    # --- Evaluate the Model ---
+    print("Evaluating model performance...")
+    y_pred = xgb.predict(X_test)
+
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred))
+
+    print("\nConfusion Matrix:")
+    cm = confusion_matrix(y_test, y_pred)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    plt.title('Confusion Matrix')
+    plt.ylabel('Actual')
+    plt.xlabel('Predicted')
+    plt.show()
+
+# =============================================================================
+# Finalization
+# =============================================================================
 end_time = time.time()
 elapsed_time = end_time - start_time
-print(f"Code executed successfully in {elapsed_time:.2f} seconds")
+print(f"\n--- Script executed successfully in {elapsed_time:.2f} seconds ---")
