@@ -25,41 +25,41 @@ data_1 = pd.read_csv(path)
 
 ### Padding zeros to make all values of same length
 for i in range(10):
-    data_1["ICD9_DGNS_CD_" + str(i+1)] = data_1["ICD9_DGNS_CD_" + str(i+1)].str.strip()
+    data_1["ICD9_DGNS_CD_" + str(i+1)] = data_1["ICD9_DGNS_CD_" + str(i+1)].astype(str).str.strip()
     data_1["ICD9_DGNS_CD_" + str(i+1)] = data_1["ICD9_DGNS_CD_" + str(i+1)].str.pad(5, fillchar='0')
     
 for i in range(44):
-    data_1["HCPCS_CD_" + str(i+1)] = data_1["HCPCS_CD_" + str(i+1)].str.strip()
+    data_1["HCPCS_CD_" + str(i+1)] = data_1["HCPCS_CD_" + str(i+1)].astype(str).str.strip()
     data_1["HCPCS_CD_" + str(i+1)] = data_1["HCPCS_CD_" + str(i+1)].str.pad(5, fillchar='0')
 
 ### Converting Diagnosis Codes to Categories
 for i in range(10):
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('00', '13', inclusive=True),"Diag"+str(i+1)] = 'Infection_&_Parasitic'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('14', '23', inclusive=True),"Diag"+str(i+1)] = 'Neoplasm'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('24', '27', inclusive=True),"Diag"+str(i+1)] = 'Endocrine_Nutritional_Immunity'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('00', '13', inclusive='both'),"Diag"+str(i+1)] = 'Infection_&_Parasitic'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('14', '23', inclusive='both'),"Diag"+str(i+1)] = 'Neoplasm'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('24', '27', inclusive='both'),"Diag"+str(i+1)] = 'Endocrine_Nutritional_Immunity'
     data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2] == '28',"Diag"+str(i+1)] = 'Blood'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('29', '31', inclusive=True),"Diag"+str(i+1)] = 'Mental_&_Behavioral'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('32', '38', inclusive=True),"Diag"+str(i+1)] = 'Nervous'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('39', '45', inclusive=True),"Diag"+str(i+1)] = 'Circulatory'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('46', '51', inclusive=True),"Diag"+str(i+1)] = 'Respiratory'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('52', '57', inclusive=True),"Diag"+str(i+1)] = 'Digestive'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('58', '62', inclusive=True),"Diag"+str(i+1)] = 'Genitourinary'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('68', '70', inclusive=True),"Diag"+str(i+1)] = 'Skin'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('71', '73', inclusive=True),"Diag"+str(i+1)] = 'Musculoskeletal'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('74', '75', inclusive=True),"Diag"+str(i+1)] = 'Congenital_Anomaly'
-    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('80', '99', inclusive=True),"Diag"+str(i+1)] = 'Injury_&_Poisining'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('29', '31', inclusive='both'),"Diag"+str(i+1)] = 'Mental_&_Behavioral'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('32', '38', inclusive='both'),"Diag"+str(i+1)] = 'Nervous'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('39', '45', inclusive='both'),"Diag"+str(i+1)] = 'Circulatory'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('46', '51', inclusive='both'),"Diag"+str(i+1)] = 'Respiratory'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('52', '57', inclusive='both'),"Diag"+str(i+1)] = 'Digestive'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('58', '62', inclusive='both'),"Diag"+str(i+1)] = 'Genitourinary'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('68', '70', inclusive='both'),"Diag"+str(i+1)] = 'Skin'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('71', '73', inclusive='both'),"Diag"+str(i+1)] = 'Musculoskeletal'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('74', '75', inclusive='both'),"Diag"+str(i+1)] = 'Congenital_Anomaly'
+    data_1.loc[data_1["ICD9_DGNS_CD_" + str(i+1)].str[:2].between('80', '99', inclusive='both'),"Diag"+str(i+1)] = 'Injury_&_Poisining'
 
 ### Converting Procedure Codes to Categories
 for i in range(44):
     data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:1] == '0',"Proc" + str(i+1)] = 'Anesthesia'
-    data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:1].between('1', '6', inclusive=True),"Proc" + str(i+1)] = 'Surgery'
+    data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:1].between('1', '6', inclusive='both'),"Proc" + str(i+1)] = 'Surgery'
     data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:1] == '7',"Proc" + str(i+1)] = 'Radiology'
     data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:1] == '8',"Proc" + str(i+1)] = 'Pathology_Procedure'
-    data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:3].between('992', '994', inclusive=True),"Proc" + str(i+1)] = 'E&M'   
+    data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:3].between('992', '994', inclusive='both'),"Proc" + str(i+1)] = 'E&M'   
     data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:2] == 'A0',"Proc" + str(i+1)] = 'Ambulance'
-    data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:3].between('A42', 'A80', inclusive=True),"Proc" + str(i+1)] = 'Medical_Supplies' 
+    data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:3].between('A42', 'A80', inclusive='both'),"Proc" + str(i+1)] = 'Medical_Supplies' 
     data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:2] == 'A9',"Proc" + str(i+1)] = 'Investigational'
-    data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:2].between('J0', 'J8', inclusive=True),"Proc" + str(i+1)] = 'Drugs_other_than_oral'  
+    data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:2].between('J0', 'J8', inclusive='both'),"Proc" + str(i+1)] = 'Drugs_other_than_oral'  
     data_1.loc[data_1["HCPCS_CD_" + str(i+1)].str[:2] == 'J9',"Proc" + str(i+1)] = 'Chemotherapy'
 
 ### Grouping data at patient level
@@ -203,7 +203,7 @@ ph_3_data8 = ph_3_data7[ph_3_data7['perc_unnecessary_claims'] > (Q3 + 3*IQR)]
 
 ### Sort the values and display the output 
 output = ph_3_data8.sort_values(by=['perc_unnecessary_claims'], ascending=False)
-output.to_csv('C:\\Users\\HOME\\Desktop\\Saransh\\Mtech\\Dissertation\\Code\\Output.csv')
+output.to_csv('Output.csv')
 
 # Record the end time
 end_time = time.time()
