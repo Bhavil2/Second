@@ -25,26 +25,35 @@ if len(sys.argv) < 2:
 
 path = sys.argv[1]
 
-### Reading the data with error handling
+### Reading the data with error handling and dtype specification
 try:
-    data_1 = pd.read_csv(path)
+    # Use `low_memory=False` to handle large files with mixed dtypes better
+    # or specify dtypes explicitly if you know them.
+    # For now, low_memory=False is a good general solution.
+    data_1 = pd.read_csv(path, low_memory=False)
 except Exception as e:
     print(f"Error reading CSV file: {e}")
     sys.exit(1)
 
 ### Padding zeros to make all values of same length
-# A more efficient way to pad strings
+# A more robust way to handle mixed dtypes and NaNs
 for i in range(10):
     col_name = f"ICD9_DGNS_CD_{i+1}"
     if col_name in data_1.columns:
-        data_1[col_name] = data_1[col_name].astype(str).str.strip().str.pad(5, fillchar='0')
-
+        # Convert the entire column to a string type first
+        data_1[col_name] = data_1[col_name].astype(str)
+        # Now, apply string operations, safely handling 'nan' strings
+        data_1[col_name] = data_1[col_name].str.strip().str.replace('nan', '', regex=False).str.pad(5, fillchar='0')
+       
 for i in range(44):
     col_name = f"HCPCS_CD_{i+1}"
     if col_name in data_1.columns:
-        data_1[col_name] = data_1[col_name].astype(str).str.strip().str.pad(5, fillchar='0')
+        # Convert the entire column to a string type first
+        data_1[col_name] = data_1[col_name].astype(str)
+        # Now, apply string operations, safely handling 'nan' strings
+        data_1[col_name] = data_1[col_name].str.strip().str.replace('nan', '', regex=False).str.pad(5, fillchar='0')
 
-### Converting Diagnosis Codes to Categories
+### Converting Diagnosis Codes to Categories (rest of the code remains the same)
 diag_categories = {
     '00': 'Infection_&_Parasitic', '01': 'Infection_&_Parasitic', '02': 'Infection_&_Parasitic', '03': 'Infection_&_Parasitic',
     '04': 'Infection_&_Parasitic', '05': 'Infection_&_Parasitic', '06': 'Infection_&_Parasitic', '07': 'Infection_&_Parasitic',
@@ -77,7 +86,7 @@ for i in range(10):
     if col_name in data_1.columns:
         data_1[diag_col] = data_1[col_name].str[:2].map(diag_categories)
 
-### Converting Procedure Codes to Categories
+### Converting Procedure Codes to Categories (rest of the code remains the same)
 proc_conditions = [
     (lambda x: x.str.startswith('0'), 'Anesthesia'),
     (lambda x: x.str.startswith(('1', '2', '3', '4', '5', '6')), 'Surgery'),
@@ -97,7 +106,6 @@ for i in range(44):
     col_name = f"HCPCS_CD_{i+1}"
     proc_col = f"Proc{i+1}"
     if col_name in data_1.columns:
-        # Initialize the column with a default value to avoid fragmentation
         data_1[proc_col] = np.nan
         for condition, category in proc_conditions:
             mask = data_1[col_name].str.replace('nan', '', regex=False).fillna('')
@@ -171,7 +179,6 @@ y = ph_2_data2.values
 
 outlier_predictions = pd.DataFrame(0, index=ph_2_data1.index, columns=ph_2_data1.columns)
 for i, col in enumerate(ph_2_data1.columns):
-    # Ensure there are both positive and negative classes
     if len(np.unique(y[:, i])) > 1:
         X_train, X_test, y_train, y_test = train_test_split(X, y[:, i], test_size=0.2, random_state=42, stratify=y[:, i])
 
@@ -180,7 +187,6 @@ for i, col in enumerate(ph_2_data1.columns):
         model.fit(X_train, y_train)
         outlier_predictions[col] = model.predict(X)
     else:
-        # If no outliers in this column, predict all as not outlier
         outlier_predictions[col] = 0
 
 outlier_mask = outlier_predictions == 1
@@ -197,14 +203,12 @@ if 'Cluster' not in data_4.columns or 'DESYNPUF_ID' not in data_1.columns:
     print("Error: Required columns not found for merging")
     sys.exit(1)
 
-# Reset index to make DESYNPUF_ID a column for merging
 data_4_indexed = data_4.reset_index().rename(columns={'index': 'DESYNPUF_ID'})
 
 ph_3_data2 = pd.merge(data_1, data_4_indexed[['DESYNPUF_ID', 'Cluster']], on='DESYNPUF_ID', how='inner')
 
-# Create a long format of procedure claims for a more efficient merge
 proc_long = pd.melt(ph_3_data2, id_vars=['DESYNPUF_ID', 'CLM_ID', 'PRVDR_NUM', 'Cluster'],
-                    value_vars=proc_cols, value_name='Procedure')
+                    value_vars=[col for col in proc_cols if col in ph_3_data2.columns], value_name='Procedure')
 proc_long = proc_long.dropna(subset=['Procedure'])
 
 ph_3_data3 = pd.merge(proc_long, ph_3_data1, on=['Cluster', 'Procedure'], how='inner')
@@ -225,19 +229,16 @@ if not ph_3_data3.empty and 'PRVDR_NUM' in ph_3_data3.columns:
 
     ph_3_data7 = ph_3_data6[ph_3_data6['Total_count'] > 10]
 
-    # Calculate IQR
     Q1 = ph_3_data7['perc_unnecessary_claims'].quantile(0.25)
     Q3 = ph_3_data7['perc_unnecessary_claims'].quantile(0.75)
     IQR = Q3 - Q1
     
-    # Filter for outliers
     ph_3_data8 = ph_3_data7[ph_3_data7['perc_unnecessary_claims'] > (Q3 + 3*IQR)]
     
-    # Save output
     output = ph_3_data8.sort_values('perc_unnecessary_claims', ascending=False)
     output.to_csv('Output.csv')
 else:
-    print("Warning: No outlier claims detected or PRVDR_NUM column missing.")
+    print("Warning: No outlier claims detected or PRVDR_NUM column missing")
     pd.DataFrame().to_csv('Output.csv')
 
 # Record and print execution time
